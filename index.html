@@ -3,17 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>The War Room Quiz</title>
+<title>UpConnects Quiz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 
-<!-- ============================================================
-  FIREBASE CONFIG — Replace these 6 values with your own
-  Get them from: Firebase Console → Your Project → Project Settings → Your Apps → SDK setup
-============================================================ -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, get, onValue, update, remove }
+  import { getDatabase, ref, set, get, onValue, update }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
@@ -26,53 +22,37 @@
     appId:             "1:962624065884:web:dfd34eec22b2341664b199"
   };
 
-  // ── Constants ──────────────────────────────────────────────
-  const GAME_CODE  = "1947";
-  const ADMIN_CODE = "1234";
-  const QUIZ_DURATION = 90; // seconds
+  const GAME_CODE     = "1947";
+  const ADMIN_CODE    = "1234";
+  const QUIZ_DURATION = 90;
   const OPTION_LABELS = ["A","B","C","D"];
+  const PTS_CORRECT   = 10;  // flat 10 pts, 0 for wrong
 
   const QUESTIONS = [
-    {
-      id:1, topic:"Market Timings & Basics",
+    { id:1, topic:"Market Timings & Basics",
       q:"At what time does the NSE equity market open for regular trading?",
-      options:["9:00 AM","9:15 AM","9:30 AM","10:00 AM"], answer:1
-    },
-    {
-      id:2, topic:"Taxation & Charges",
+      options:["9:00 AM","9:15 AM","9:30 AM","10:00 AM"], answer:1 },
+    { id:2, topic:"Taxation & Charges",
       q:"Intraday equity trading profits are classified under which income head for tax purposes?",
-      options:["Short-Term Capital Gains","Long-Term Capital Gains","Speculative Business Income","Income from Other Sources"], answer:2
-    },
-    {
-      id:3, topic:"Order Types",
+      options:["Short-Term Capital Gains","Long-Term Capital Gains","Speculative Business Income","Income from Other Sources"], answer:2 },
+    { id:3, topic:"Order Types",
       q:"You place a Market Order to buy Reliance at 9:16 AM. What is guaranteed?",
-      options:["You get the price you saw on screen","Your order executes, but price may differ","Your order waits for the best price","Your order executes only if price falls"], answer:1
-    },
-    {
-      id:4, topic:"Taxation & Charges",
+      options:["You get the price you saw on screen","Your order executes, but price may differ","Your order waits for the best price","Your order executes only if price falls"], answer:1 },
+    { id:4, topic:"Taxation & Charges",
       q:"STT on intraday equity is charged on which side?",
-      options:["Buy side only","Sell side only","Both buy and sell sides","STT does not apply to intraday"], answer:1
-    },
-    {
-      id:5, topic:"Risk & Margin",
+      options:["Buy side only","Sell side only","Both buy and sell sides","STT does not apply to intraday"], answer:1 },
+    { id:5, topic:"Risk & Margin",
       q:"What is the maximum intraday leverage a broker can legally offer on equity after SEBI's Peak Margin rules?",
-      options:["20x","10x","5x","2x"], answer:2
-    },
-    {
-      id:6, topic:"Taxation & Charges",
+      options:["20x","10x","5x","2x"], answer:2 },
+    { id:6, topic:"Taxation & Charges",
       q:"Your intraday loss for the year is Rs.50,000. You have salary income of Rs.12 lakh. Can you offset the loss against salary?",
-      options:["Yes, fully","Yes, up to Rs.1.25 lakh","No, speculative losses can only offset speculative gains","No, intraday losses can never be carried forward"], answer:2
-    },
-    {
-      id:7, topic:"Market Timings & Basics",
+      options:["Yes, fully","Yes, up to Rs.1.25 lakh","No, speculative losses can only offset speculative gains","No, intraday losses can never be carried forward"], answer:2 },
+    { id:7, topic:"Market Timings & Basics",
       q:"You forget to square off your MIS position before market close. What happens?",
-      options:["It converts to delivery automatically","It gets cancelled with no P&L impact","It is auto-squared off by the broker and a penalty is levied","Your account gets blocked"], answer:2
-    },
-    {
-      id:8, topic:"Order Types",
+      options:["It converts to delivery automatically","It gets cancelled with no P&L impact","It is auto-squared off by the broker and a penalty is levied","Your account gets blocked"], answer:2 },
+    { id:8, topic:"Order Types",
       q:"You place a Limit Buy Order at Rs.550 when the stock is at Rs.530. When will it execute?",
-      options:["Immediately at Rs.530","Never, you cannot place a buy limit above current price","Only when the stock rises to Rs.550 and a seller exists","At Rs.540, midpoint between current and limit price"], answer:2
-    }
+      options:["Immediately at Rs.530","Never, you cannot place a buy limit above current price","Only when the stock rises to Rs.550 and a seller exists","At Rs.540, midpoint between current and limit price"], answer:2 }
   ];
 
   const TOPIC_COLORS = {
@@ -82,38 +62,20 @@
     "Risk & Margin":           { bg:"rgba(220,38,38,0.25)",  text:"#FCA5A5", border:"rgba(220,38,38,0.5)" },
   };
 
-  // ── Firebase init ──────────────────────────────────────────
   const app = initializeApp(firebaseConfig);
   const db  = getDatabase(app);
   const gameRef = ref(db, "warroom");
 
-  // ── State ──────────────────────────────────────────────────
-  let playerId   = null;
-  let playerName = null;
-  let isAdmin    = false;
+  let playerId = null, playerName = null, isAdmin = false;
   let timerInterval = null;
-  let myAnswers  = {};   // questionId -> answerIndex
-  let myScore    = 0;
-  let currentQIndex = 0;
-  let gameStartedAt = null;
-  let revealedAnswers = {};
+  let myAnswers = {}, myScore = 0, currentQIndex = 0;
+  let gameStartedAt = null, revealedAnswers = {};
+  // admin tab state
+  let adminTab = "control";
 
-  // ── Helpers ────────────────────────────────────────────────
   function uid() { return "p_" + Date.now() + "_" + Math.random().toString(36).slice(2,6); }
-
   function el(id) { return document.getElementById(id); }
 
-  function show(id)  { el(id).style.display = "flex"; }
-  function hide(id)  { el(id).style.display = "none"; }
-  function showBlock(id) { el(id).style.display = "block"; }
-
-  function scoreFor(correct, elapsedSec) {
-    if (!correct) return 0;
-    const bonus = Math.max(0, Math.floor(50 * (1 - elapsedSec / QUIZ_DURATION)));
-    return 100 + bonus;
-  }
-
-  // ── Screens ────────────────────────────────────────────────
   function showScreen(name) {
     document.querySelectorAll(".screen").forEach(s => s.style.display = "none");
     const s = el("screen-" + name);
@@ -127,30 +89,17 @@
     const name = el("input-name").value.trim().slice(0,20);
     const code = el("input-code").value.trim();
     el("join-error").textContent = "";
-
     if (!name) { el("join-error").textContent = "Enter your name"; return; }
+    if (code === ADMIN_CODE) { isAdmin = true; showAdminPanel(); return; }
+    if (code !== GAME_CODE)  { el("join-error").textContent = "Invalid game code"; return; }
 
-    if (code === ADMIN_CODE) {
-      isAdmin = true;
-      showAdminPanel();
-      return;
-    }
-
-    if (code !== GAME_CODE) { el("join-error").textContent = "Invalid game code"; return; }
-
-    // Check game status
     const snap = await get(gameRef);
     const state = snap.val() || {};
     if (state.status === "active")   { el("join-error").textContent = "Game already started"; return; }
     if (state.status === "finished") { el("join-error").textContent = "Game has ended"; return; }
 
-    playerId   = uid();
-    playerName = name;
-
-    await update(ref(db, `warroom/players/${playerId}`), {
-      name, score:0, joinedAt: Date.now()
-    });
-
+    playerId = uid(); playerName = name;
+    await update(ref(db, `warroom/players/${playerId}`), { name, score:0, joinedAt: Date.now() });
     showLobby();
   };
 
@@ -160,17 +109,12 @@
   function showLobby() {
     showScreen("lobby");
     el("lobby-name").textContent = playerName;
-
     onValue(ref(db,"warroom/players"), snap => {
       const players = snap.val() || {};
-      const count = Object.keys(players).length;
-      el("lobby-count").textContent = count;
-      const list = el("lobby-players");
-      list.innerHTML = Object.values(players).map(p =>
-        `<div class="player-chip">${p.name}</div>`
-      ).join("");
+      el("lobby-count").textContent = Object.keys(players).length;
+      el("lobby-players").innerHTML = Object.values(players).map(p =>
+        `<div class="player-chip">${p.name}</div>`).join("");
     });
-
     onValue(ref(db,"warroom/status"), snap => {
       if (snap.val() === "active") startQuizPlayer();
     });
@@ -185,8 +129,6 @@
     showScreen("quiz");
     renderQuestion();
     startTimer();
-
-    // Listen for revealed answers
     onValue(ref(db,"warroom/revealed"), snap => {
       revealedAnswers = snap.val() || {};
       renderQuestion();
@@ -194,108 +136,92 @@
   }
 
   function renderQuestion() {
-    const q = QUESTIONS[currentQIndex];
+    const q  = QUESTIONS[currentQIndex];
     const tc = TOPIC_COLORS[q.topic] || { bg:"rgba(255,255,255,0.1)", text:"#fff", border:"rgba(255,255,255,0.2)" };
-
     el("q-num").textContent   = `Q${currentQIndex+1} / ${QUESTIONS.length}`;
-    el("q-score").textContent = `${myScore} pts`;
-
+    el("q-score").textContent = `${myScore} / ${QUESTIONS.length * PTS_CORRECT} pts`;
     el("q-topic").textContent = q.topic;
-    el("q-topic").style.background = tc.bg;
-    el("q-topic").style.color      = tc.text;
-    el("q-topic").style.borderColor= tc.border;
-
-    el("q-text").textContent = q.question;
+    el("q-topic").style.cssText += `;background:${tc.bg};color:${tc.text};border-color:${tc.border}`;
+    el("q-text").textContent  = q.q;
 
     const answered = myAnswers[q.id] !== undefined;
     const revealed = revealedAnswers[q.id] !== undefined;
-
     el("q-options").innerHTML = q.options.map((opt, i) => {
       let cls = "option-btn";
       if (answered) {
         if (revealed) {
-          if (i === q.answer)               cls += " correct";
-          else if (i === myAnswers[q.id])   cls += " wrong";
-          else                              cls += " dimmed";
+          if (i === q.answer)             cls += " correct";
+          else if (i === myAnswers[q.id]) cls += " wrong";
+          else                            cls += " dimmed";
         } else {
           if (i === myAnswers[q.id]) cls += " selected";
         }
       }
-      return `
-        <button class="${cls}" onclick="submitAnswer(${q.id},${i})" ${answered ? "disabled" : ""}>
-          <span class="opt-label">${OPTION_LABELS[i]}</span>
-          <span class="opt-text">${opt}</span>
-        </button>`;
+      return `<button class="${cls}" onclick="submitAnswer(${q.id},${i})" ${answered?"disabled":""}>
+        <span class="opt-label">${OPTION_LABELS[i]}</span>
+        <span class="opt-text">${opt}</span>
+      </button>`;
     }).join("");
 
-    // Navigation dots
     el("q-dots").innerHTML = QUESTIONS.map((qq,i) => {
-      let cls = "dot";
-      if (i === currentQIndex) cls += " active";
-      else if (myAnswers[qq.id] !== undefined) cls += " done";
+      let cls = "dot" + (i===currentQIndex?" active":"") + (myAnswers[qq.id]!==undefined?" done":"");
       return `<span class="${cls}" onclick="goToQuestion(${i})"></span>`;
     }).join("");
 
-    // Next / prev
     el("q-prev").style.visibility = currentQIndex > 0 ? "visible" : "hidden";
     el("q-next").style.visibility = currentQIndex < QUESTIONS.length-1 ? "visible" : "hidden";
-
-    // All done message
-    const allAnswered = QUESTIONS.every(q => myAnswers[q.id] !== undefined);
-    el("q-alldone").style.display = allAnswered ? "block" : "none";
+    el("q-alldone").style.display = QUESTIONS.every(qq => myAnswers[qq.id] !== undefined) ? "block" : "none";
   }
 
   window.submitAnswer = async function(questionId, answerIndex) {
     if (myAnswers[questionId] !== undefined) return;
     const elapsed = (Date.now() - gameStartedAt) / 1000;
     if (elapsed > QUIZ_DURATION) return;
-
     const q = QUESTIONS.find(q => q.id === questionId);
     const correct = answerIndex === q.answer;
-    const points  = scoreFor(correct, elapsed);
-
+    const points  = correct ? PTS_CORRECT : 0;
     myAnswers[questionId] = answerIndex;
     myScore += points;
-
     await update(ref(db, `warroom/players/${playerId}`), { score: myScore });
-    await update(ref(db, `warroom/answers/${playerId}/${questionId}`), {
-      answerIndex, correct, points
-    });
-
+    await update(ref(db, `warroom/answers/${playerId}/${questionId}`), { answerIndex, correct, points });
     renderQuestion();
-
-    // Brief feedback flash
     const feedbackEl = el("q-feedback");
-    feedbackEl.textContent  = correct ? `+${points} pts` : "Wrong";
-    feedbackEl.className    = "feedback-flash " + (correct ? "correct" : "wrong");
+    feedbackEl.textContent = correct ? `+${points} pts` : "Wrong";
+    feedbackEl.className   = "feedback-flash " + (correct ? "correct" : "wrong");
     feedbackEl.style.display = "block";
     setTimeout(() => { feedbackEl.style.display = "none"; }, 1200);
   };
 
-  window.goToQuestion = function(i) {
-    currentQIndex = i;
-    renderQuestion();
-  };
-  window.prevQuestion = function() { if (currentQIndex > 0) { currentQIndex--; renderQuestion(); } };
-  window.nextQuestion = function() { if (currentQIndex < QUESTIONS.length-1) { currentQIndex++; renderQuestion(); } };
+  window.goToQuestion  = function(i) { currentQIndex = i; renderQuestion(); };
+  window.prevQuestion  = function()  { if (currentQIndex > 0) { currentQIndex--; renderQuestion(); } };
+  window.nextQuestion  = function()  { if (currentQIndex < QUESTIONS.length-1) { currentQIndex++; renderQuestion(); } };
 
   // ══════════════════════════════════════════════════════════
-  // TIMER
+  // TIMER  (shared between player + admin)
   // ══════════════════════════════════════════════════════════
   function startTimer() {
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(() => {
-      const elapsed = (Date.now() - gameStartedAt) / 1000;
-      const left = Math.max(0, QUIZ_DURATION - elapsed);
+      const left = Math.max(0, QUIZ_DURATION - (Date.now() - gameStartedAt) / 1000);
       const pct  = (left / QUIZ_DURATION) * 100;
-
-      el("timer-text").textContent = Math.ceil(left) + "s";
-      el("timer-text").style.color = left < 20 ? "#FCA5A5" : "white";
-      el("timer-fill").style.width = pct + "%";
-      el("timer-fill").style.background = left < 20
-        ? "#DC2626"
-        : "linear-gradient(90deg,#7B4DB0,#D97706)";
-
+      // player timer elements
+      if (el("timer-text")) {
+        el("timer-text").textContent = Math.ceil(left) + "s";
+        el("timer-text").style.color = left < 20 ? "#FCA5A5" : "white";
+      }
+      if (el("timer-fill")) {
+        el("timer-fill").style.width = pct + "%";
+        el("timer-fill").style.background = left < 20 ? "#DC2626" : "linear-gradient(90deg,#7B4DB0,#D97706)";
+      }
+      // admin timer elements
+      if (el("admin-timer-text")) {
+        el("admin-timer-text").textContent = Math.ceil(left) + "s";
+        el("admin-timer-text").style.color = left < 20 ? "#FCA5A5" : "white";
+      }
+      if (el("admin-timer-fill")) {
+        el("admin-timer-fill").style.width = pct + "%";
+        el("admin-timer-fill").style.background = left < 20 ? "#DC2626" : "linear-gradient(90deg,#7B4DB0,#D97706)";
+      }
       if (left <= 0) {
         clearInterval(timerInterval);
         if (!isAdmin) showResults();
@@ -309,20 +235,17 @@
   function showResults() {
     showScreen("results");
     el("result-score").textContent = myScore;
-
+    el("result-total").textContent = QUESTIONS.length * PTS_CORRECT;
     onValue(ref(db,"warroom/players"), snap => {
-      const players = Object.values(snap.val() || {})
-        .sort((a,b) => b.score - a.score);
-
+      const players = Object.values(snap.val() || {}).sort((a,b) => b.score - a.score);
       el("results-board").innerHTML = players.map((p,i) => {
         const medals = ["🥇","🥈","🥉"];
         const isMe = p.name === playerName;
-        return `
-          <div class="lb-row ${isMe ? "lb-me" : ""}">
-            <span class="lb-rank">${i < 3 ? medals[i] : i+1}</span>
-            <span class="lb-name">${p.name}${isMe ? " (you)" : ""}</span>
-            <span class="lb-score">${p.score}</span>
-          </div>`;
+        return `<div class="lb-row ${isMe?"lb-me":""}">
+          <span class="lb-rank">${i<3?medals[i]:i+1}</span>
+          <span class="lb-name">${p.name}${isMe?" (you)":""}</span>
+          <span class="lb-score">${p.score}</span>
+        </div>`;
       }).join("");
     });
   }
@@ -332,86 +255,85 @@
   // ══════════════════════════════════════════════════════════
   function showAdminPanel() {
     showScreen("admin");
-    renderAdminQuestions();
+    switchAdminTab("control");
 
     onValue(ref(db,"warroom"), snap => {
-      const state = snap.val() || {};
+      const state   = snap.val() || {};
       const players = state.players || {};
-      const count = Object.keys(players).length;
+      const count   = Object.keys(players).length;
+      const status  = state.status || "waiting";
 
-      el("admin-pcount").textContent = count + " player" + (count !== 1 ? "s" : "") + " joined";
-      el("admin-status-badge").textContent = state.status || "waiting";
-      el("admin-status-badge").className = "status-badge " + (state.status || "waiting");
+      el("admin-pcount").textContent        = count + " player" + (count!==1?"s":"") + " joined";
+      el("admin-status-badge").textContent  = status;
+      el("admin-status-badge").className    = "status-badge " + status;
 
-      // Leaderboard
+      // ── Control tab buttons ──
+      el("admin-start-btn").style.display = status === "waiting"  ? "block" : "none";
+      el("admin-end-btn").style.display   = status === "active"   ? "block" : "none";
+      el("admin-reset-btn").style.display = status === "finished" ? "block" : "none";
+
+      // ── Timer ──
+      if (status === "active" && state.startedAt) {
+        el("admin-timer-section").style.display = "block";
+        if (!gameStartedAt) { gameStartedAt = state.startedAt; startTimer(); }
+      } else {
+        el("admin-timer-section").style.display = "none";
+        if (status !== "active") clearInterval(timerInterval);
+      }
+
+      // ── Leaderboard tab ──
       const sorted = Object.values(players).sort((a,b) => b.score - a.score);
       el("admin-lb").innerHTML = sorted.length
         ? sorted.map((p,i) => {
             const medals = ["🥇","🥈","🥉"];
             return `<div class="lb-row">
-              <span class="lb-rank">${i < 3 ? medals[i] : i+1}</span>
+              <span class="lb-rank">${i<3?medals[i]:i+1}</span>
               <span class="lb-name">${p.name}</span>
               <span class="lb-score">${p.score}</span>
             </div>`;
           }).join("")
-        : `<p style="color:rgba(255,255,255,0.3);text-align:center;font-size:14px">No players yet</p>`;
+        : `<p style="color:rgba(255,255,255,0.3);text-align:center;font-size:14px;padding:20px 0">No players yet</p>`;
 
-      // Timer
-      if (state.status === "active" && state.startedAt && !gameStartedAt) {
-        gameStartedAt = state.startedAt;
-        el("admin-timer-section").style.display = "block";
-        el("admin-start-btn").style.display = "none";
-        el("admin-end-btn").style.display   = "block";
-        startTimer();
-      }
-      if (state.status === "finished") {
-        clearInterval(timerInterval);
-        el("admin-timer-section").style.display = "none";
-        el("admin-start-btn").style.display = "none";
-        el("admin-end-btn").style.display   = "none";
-        el("admin-reset-btn").style.display = "block";
-      }
-
-      // Revealed answers
+      // ── Reveal tab ──
       revealedAnswers = state.revealed || {};
-      renderAdminQuestions();
+      renderAdminReveal();
     });
   }
 
-  function renderAdminQuestions() {
-    el("admin-questions").innerHTML = QUESTIONS.map((q,i) => {
+  function renderAdminReveal() {
+    el("admin-reveal-list").innerHTML = QUESTIONS.map((q,i) => {
       const revealed = revealedAnswers[q.id] !== undefined;
       const tc = TOPIC_COLORS[q.topic] || { bg:"rgba(255,255,255,0.1)", text:"#fff", border:"rgba(255,255,255,0.2)" };
-      return `
-        <div class="admin-q-card ${revealed ? "revealed" : ""}">
-          <div style="display:flex;align-items:flex-start;gap:10px">
-            <div class="q-num-bubble">${i+1}</div>
-            <div style="flex:1">
-              <span class="topic-badge" style="background:${tc.bg};color:${tc.text};border-color:${tc.border}">${q.topic}</span>
-              <p class="admin-q-text">${q.q}</p>
-              ${revealed
-                ? `<div class="answer-reveal">✓ ${q.options[q.answer]}</div>`
-                : `<button class="reveal-btn" onclick="revealAnswer(${q.id})">Reveal Answer</button>`
-              }
-            </div>
+      return `<div class="admin-q-card ${revealed?"revealed":""}">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div class="q-num-bubble">${i+1}</div>
+          <div style="flex:1">
+            <span class="topic-badge" style="background:${tc.bg};color:${tc.text};border-color:${tc.border}">${q.topic}</span>
+            <p class="admin-q-text">${q.q}</p>
+            ${revealed
+              ? `<div class="answer-reveal">✓ ${q.options[q.answer]}</div>`
+              : `<button class="reveal-btn" onclick="revealAnswer(${q.id})">Reveal Answer</button>`}
           </div>
-        </div>`;
+        </div>
+      </div>`;
     }).join("");
   }
+
+  window.switchAdminTab = function(tab) {
+    adminTab = tab;
+    ["control","leaderboard","reveal"].forEach(t => {
+      el("tab-"+t).classList.toggle("active", t===tab);
+      el("panel-"+t).style.display = t===tab ? "flex" : "none";
+    });
+  };
 
   window.startGame = async function() {
     const snap = await get(ref(db,"warroom/players"));
     const players = snap.val() || {};
-    if (Object.keys(players).length === 0) {
-      el("admin-error").textContent = "No players have joined yet";
-      return;
-    }
+    if (Object.keys(players).length === 0) { el("admin-error").textContent = "No players have joined yet"; return; }
     el("admin-error").textContent = "";
     const startedAt = Date.now();
     await update(gameRef, { status:"active", startedAt });
-    el("admin-start-btn").style.display = "none";
-    el("admin-end-btn").style.display   = "block";
-    el("admin-timer-section").style.display = "block";
     gameStartedAt = startedAt;
     startTimer();
   };
@@ -419,23 +341,14 @@
   window.endGame = async function() {
     clearInterval(timerInterval);
     await update(gameRef, { status:"finished" });
-    el("admin-end-btn").style.display   = "none";
-    el("admin-reset-btn").style.display = "block";
-    el("admin-timer-section").style.display = "none";
   };
 
   window.resetGame = async function() {
     clearInterval(timerInterval);
-    gameStartedAt = null;
-    revealedAnswers = {};
-    myAnswers = {};
-    myScore = 0;
+    gameStartedAt = null; revealedAnswers = {};
+    myAnswers = {}; myScore = 0;
     await set(gameRef, { status:"waiting" });
-    el("admin-start-btn").style.display = "block";
-    el("admin-end-btn").style.display   = "none";
-    el("admin-reset-btn").style.display = "none";
-    el("admin-timer-section").style.display = "none";
-    renderAdminQuestions();
+    renderAdminReveal();
   };
 
   window.revealAnswer = async function(questionId) {
@@ -445,9 +358,6 @@
     });
   };
 
-  // ══════════════════════════════════════════════════════════
-  // LISTEN for game-finished while playing
-  // ══════════════════════════════════════════════════════════
   onValue(ref(db,"warroom/status"), snap => {
     if (snap.val() === "finished" && playerId && !isAdmin) {
       clearInterval(timerInterval);
@@ -455,404 +365,223 @@
     }
   });
 
-  // ── Init ───────────────────────────────────────────────────
   showScreen("join");
   el("input-name").addEventListener("keydown", e => { if(e.key==="Enter") el("input-code").focus(); });
   el("input-code").addEventListener("keydown", e => { if(e.key==="Enter") handleJoin(); });
 </script>
 
 <style>
-*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-
-:root {
-  --purple:      #5B2D8E;
-  --purple-mid:  #7B4DB0;
-  --purple-light:#EDE7F6;
-  --amber:       #D97706;
-  --green:       #1B8A5A;
-  --red:         #DC2626;
-  --dark:        #0D0820;
-  --card:        #160D2E;
-  --card2:       #1E1040;
-  --border:      rgba(255,255,255,0.08);
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --purple:#5B2D8E;--purple-mid:#7B4DB0;
+  --amber:#D97706;--green:#1B8A5A;--red:#DC2626;
+  --dark:#0D0820;--card:#160D2E;--border:rgba(255,255,255,0.08);
 }
-
-html,body { height:100%; }
-
-body {
-  font-family:'DM Sans',sans-serif;
-  background: radial-gradient(ellipse at top, #1A0A3E 0%, #0D0820 60%);
-  color:#fff;
-  min-height:100dvh;
-  -webkit-font-smoothing:antialiased;
-}
-
-h1,h2,h3,.syne { font-family:'Syne',sans-serif; }
+html,body{height:100%}
+body{font-family:'DM Sans',sans-serif;background:radial-gradient(ellipse at top,#1A0A3E 0%,#0D0820 60%);color:#fff;min-height:100dvh;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.syne{font-family:'Syne',sans-serif}
 
 /* ── Screens ── */
-.screen {
-  display:none;
-  flex-direction:column;
-  align-items:center;
-  min-height:100dvh;
-  padding:24px 16px 40px;
-  width:100%;
-}
+.screen{display:none;flex-direction:column;align-items:center;min-height:100dvh;padding:24px 16px 40px;width:100%}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeUp .35s ease both}
 
-@keyframes fadeUp {
-  from { opacity:0; transform:translateY(14px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-.fade-in { animation: fadeUp 0.35s ease both; }
+/* ── Card ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;width:100%;max-width:440px}
 
-/* ── Cards ── */
-.card {
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:18px;
-  width:100%;
-  max-width:440px;
-}
-
-/* ── Inputs ── */
-.input-wrap { display:flex; flex-direction:column; gap:10px; width:100%; max-width:440px; }
-
-input.field {
-  background:rgba(255,255,255,0.06);
-  border:1.5px solid rgba(255,255,255,0.12);
-  border-radius:12px;
-  padding:15px 16px;
-  color:#fff;
-  font-family:'DM Sans',sans-serif;
-  font-size:16px;
-  width:100%;
-  outline:none;
-  transition:border-color 0.2s;
-}
-input.field:focus { border-color:var(--purple-mid); }
-input.field::placeholder { color:rgba(255,255,255,0.28); }
+/* ── Input ── */
+input.field{background:rgba(255,255,255,0.06);border:1.5px solid rgba(255,255,255,0.12);border-radius:12px;padding:15px 16px;color:#fff;font-family:'DM Sans',sans-serif;font-size:16px;width:100%;outline:none;transition:border-color .2s}
+input.field:focus{border-color:var(--purple-mid)}
+input.field::placeholder{color:rgba(255,255,255,0.28)}
 
 /* ── Buttons ── */
-.btn {
-  font-family:'Syne',sans-serif;
-  font-weight:700;
-  font-size:16px;
-  border:none;
-  border-radius:13px;
-  padding:15px 20px;
-  cursor:pointer;
-  width:100%;
-  max-width:440px;
-  transition:opacity 0.15s, transform 0.1s;
-  letter-spacing:0.02em;
-}
-.btn:active { transform:scale(0.97); }
-.btn-purple { background:var(--purple); color:#fff; }
-.btn-purple:hover { background:var(--purple-mid); }
-.btn-amber  { background:var(--amber);  color:#fff; }
-.btn-red    { background:var(--red);    color:#fff; }
-.btn-ghost  { background:rgba(255,255,255,0.07); color:#fff; }
-.btn:disabled { opacity:0.35; cursor:not-allowed; }
-
-.error-text { color:#FCA5A5; font-size:13px; text-align:center; min-height:18px; }
+.btn{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;border:none;border-radius:13px;padding:15px 20px;cursor:pointer;width:100%;max-width:440px;transition:opacity .15s,transform .1s;letter-spacing:.02em}
+.btn:active{transform:scale(.97)}
+.btn-purple{background:var(--purple);color:#fff}.btn-purple:hover{background:var(--purple-mid)}
+.btn-red{background:var(--red);color:#fff}
+.btn-ghost{background:rgba(255,255,255,0.07);color:#fff}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.error-text{color:#FCA5A5;font-size:13px;text-align:center;min-height:18px}
 
 /* ── JOIN ── */
-#screen-join {
-  justify-content:center;
-}
-.join-logo {
-  text-align:center;
-  margin-bottom:32px;
-}
-.join-logo .eyebrow {
-  font-family:'Syne',sans-serif;
-  font-size:11px;
-  font-weight:700;
-  letter-spacing:0.18em;
-  text-transform:uppercase;
-  color:var(--purple-mid);
-  margin-bottom:10px;
-}
-.join-logo h1 {
-  font-size:40px;
-  font-weight:800;
-  line-height:1.05;
-  background:linear-gradient(135deg,#fff 40%,#A78BFA);
-  -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;
-  background-clip:text;
-}
-.join-logo p {
-  color:rgba(255,255,255,0.35);
-  font-size:14px;
-  margin-top:8px;
-}
-.join-card { padding:24px; display:flex; flex-direction:column; gap:10px; }
+#screen-join{justify-content:center}
+.join-logo{text-align:center;margin-bottom:32px}
+.join-logo .eyebrow{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--purple-mid);margin-bottom:10px}
+.join-logo h1{font-size:40px;font-weight:800;line-height:1.05;background:linear-gradient(135deg,#fff 40%,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.join-logo p{color:rgba(255,255,255,0.35);font-size:14px;margin-top:8px}
+.join-card{padding:24px;display:flex;flex-direction:column;gap:10px}
 
 /* ── LOBBY ── */
-#screen-lobby { justify-content:center; }
-.lobby-avatar {
-  width:72px; height:72px; border-radius:50%;
-  background:linear-gradient(135deg,var(--purple),var(--purple-mid));
-  display:flex; align-items:center; justify-content:center;
-  font-size:30px; margin:0 auto 20px;
-}
-.lobby-card { padding:24px; text-align:center; margin-bottom:12px; }
-.lobby-big  { font-family:'Syne',sans-serif; font-size:48px; font-weight:800; color:var(--purple-mid); }
-.lobby-sub  { color:rgba(255,255,255,0.35); font-size:13px; margin-top:4px; }
-.player-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:16px; }
-.player-chip {
-  background:rgba(123,77,176,0.2);
-  border:1px solid rgba(123,77,176,0.4);
-  border-radius:999px;
-  padding:5px 14px;
-  font-size:13px;
-  font-weight:500;
-}
-.pulse-dots { display:flex; gap:8px; justify-content:center; margin-top:24px; }
-.pulse-dot {
-  width:8px; height:8px; border-radius:50%;
-  background:var(--purple-mid); opacity:0.5;
-  animation:pulseDot 1.4s ease-in-out infinite;
-}
-.pulse-dot:nth-child(2) { animation-delay:0.2s; }
-.pulse-dot:nth-child(3) { animation-delay:0.4s; }
-@keyframes pulseDot {
-  0%,100% { transform:scale(1); opacity:0.5; }
-  50%     { transform:scale(1.4); opacity:1; }
-}
+#screen-lobby{justify-content:center}
+.lobby-avatar{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--purple-mid));display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 20px}
+.lobby-card{padding:24px;text-align:center;margin-bottom:12px}
+.lobby-big{font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--purple-mid)}
+.lobby-sub{color:rgba(255,255,255,0.35);font-size:13px;margin-top:4px}
+.player-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+.player-chip{background:rgba(123,77,176,0.2);border:1px solid rgba(123,77,176,0.4);border-radius:999px;padding:5px 14px;font-size:13px;font-weight:500}
+.pulse-dots{display:flex;gap:8px;justify-content:center;margin-top:24px}
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--purple-mid);opacity:.5;animation:pulseDot 1.4s ease-in-out infinite}
+.pulse-dot:nth-child(2){animation-delay:.2s}.pulse-dot:nth-child(3){animation-delay:.4s}
+@keyframes pulseDot{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.4);opacity:1}}
 
 /* ── QUIZ ── */
-#screen-quiz {
-  padding:0;
-  justify-content:flex-start;
+#screen-quiz{padding:0;justify-content:flex-start}
+.quiz-header{position:sticky;top:0;z-index:10;background:linear-gradient(to bottom,#0D0820 80%,transparent);padding:14px 16px 10px;width:100%}
+.quiz-header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto}
+.timer-bar{height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;max-width:600px;margin:0 auto}
+.timer-fill{height:100%;border-radius:2px;transition:width .3s linear}
+.quiz-body{flex:1;padding:12px 16px 24px;width:100%;max-width:600px;margin:0 auto}
+.q-card{padding:20px;margin-bottom:12px}
+.topic-badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid;margin-bottom:12px}
+.q-text{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;line-height:1.45;color:#fff}
+.options{display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
+.option-btn{background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.1);border-radius:13px;padding:13px 14px;color:#fff;font-family:'DM Sans',sans-serif;font-size:15px;text-align:left;cursor:pointer;width:100%;display:flex;align-items:center;gap:12px;transition:all .15s}
+.option-btn:hover:not(:disabled){border-color:var(--purple-mid);background:rgba(123,77,176,0.12)}
+.option-btn.selected{border-color:var(--purple-mid);background:rgba(123,77,176,0.2)}
+.option-btn.correct{border-color:var(--green);background:rgba(27,138,90,0.2)}
+.option-btn.wrong{border-color:var(--red);background:rgba(220,38,38,0.12);opacity:.65}
+.option-btn.dimmed{opacity:.3}
+.option-btn:disabled{cursor:not-allowed}
+.opt-label{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;flex-shrink:0}
+.option-btn.selected .opt-label{background:var(--purple)}
+.option-btn.correct  .opt-label{background:var(--green)}
+.option-btn.wrong    .opt-label{background:var(--red)}
+.opt-text{line-height:1.4}
+.q-nav{display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:8px}
+.nav-btn{background:rgba(255,255,255,0.07);border:none;color:#fff;border-radius:10px;padding:8px 18px;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:background .15s}
+.nav-btn:hover{background:rgba(255,255,255,0.12)}
+.q-dots{display:flex;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.2);cursor:pointer;transition:all .2s}
+.dot.active{background:var(--purple-mid);transform:scale(1.3)}
+.dot.done{background:rgba(27,138,90,0.7)}
+.feedback-flash{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Syne',sans-serif;font-weight:800;font-size:28px;padding:16px 32px;border-radius:16px;z-index:100;animation:popIn .25s ease both;pointer-events:none}
+.feedback-flash.correct{background:rgba(27,138,90,0.9)}
+.feedback-flash.wrong{background:rgba(220,38,38,0.9)}
+@keyframes popIn{from{transform:translate(-50%,-50%) scale(.8);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+.alldone-msg{display:none;background:rgba(27,138,90,0.15);border:1px solid rgba(27,138,90,0.4);border-radius:13px;padding:14px;text-align:center;font-size:14px;color:#6EE7B7;font-weight:500}
+
+/* ── RESULTS (player) ── */
+#screen-results{justify-content:flex-start;padding-top:32px}
+.results-header{text-align:center;margin-bottom:24px}
+.results-score{font-family:'Syne',sans-serif;font-size:56px;font-weight:800;color:var(--purple-mid);line-height:1}
+.results-score-label{color:rgba(255,255,255,0.4);font-size:14px}
+
+/* ── LEADERBOARD rows (shared) ── */
+.lb-section{padding:20px}
+.lb-section-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:14px}
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.lb-row:last-child{border-bottom:none}
+.lb-row.lb-me{background:rgba(123,77,176,0.1);border-radius:10px;padding:10px;margin:0 -10px}
+.lb-rank{width:32px;text-align:center;font-size:18px}
+.lb-name{flex:1;font-size:15px;font-weight:500}
+.lb-score{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--purple-mid)}
+
+/* ══════════════════════════════════════════════════════════
+   ADMIN — DESKTOP OPTIMISED
+══════════════════════════════════════════════════════════ */
+#screen-admin{padding:0;align-items:stretch;min-height:100dvh}
+
+.admin-topbar{
+  background:#0D0820;border-bottom:1px solid var(--border);
+  padding:14px 28px;display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;z-index:20;
 }
-.quiz-header {
-  position:sticky; top:0; z-index:10;
-  background:linear-gradient(to bottom,#0D0820 80%,transparent);
-  padding:14px 16px 10px;
+.admin-topbar-left{display:flex;align-items:center;gap:16px}
+.admin-brand{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;letter-spacing:.02em}
+.admin-meta{font-size:13px;color:rgba(255,255,255,0.35)}
+
+/* Tab bar */
+.admin-tabs{display:flex;gap:4px;background:rgba(255,255,255,0.06);border-radius:12px;padding:4px}
+.tab-btn{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;border:none;background:none;color:rgba(255,255,255,0.45);padding:8px 20px;border-radius:9px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.tab-btn.active{background:var(--purple);color:#fff}
+.tab-btn:hover:not(.active){color:#fff;background:rgba(255,255,255,0.08)}
+
+/* Admin content wrapper — 2 col on desktop */
+.admin-content{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:0;
+  flex:1;
+  max-width:1100px;
+  margin:0 auto;
+  padding:28px 28px 40px;
   width:100%;
 }
-.quiz-header-row {
-  display:flex; justify-content:space-between; align-items:center;
-  margin-bottom:8px; max-width:600px; margin-left:auto; margin-right:auto;
-}
-.timer-bar {
-  height:4px; background:rgba(255,255,255,0.08);
-  border-radius:2px; overflow:hidden;
-  max-width:600px; margin:0 auto;
-}
-.timer-fill {
-  height:100%; border-radius:2px;
-  transition:width 0.3s linear;
-  background:linear-gradient(90deg,var(--purple-mid),var(--amber));
-}
-.quiz-body { flex:1; padding:12px 16px 24px; width:100%; max-width:600px; margin:0 auto; }
-.q-card { padding:20px; margin-bottom:12px; }
-.topic-badge {
-  display:inline-block;
-  font-size:10px; font-weight:700;
-  letter-spacing:0.08em; text-transform:uppercase;
-  padding:3px 10px; border-radius:999px;
-  border:1px solid; margin-bottom:12px;
-}
-.q-text {
-  font-family:'Syne',sans-serif;
-  font-size:17px; font-weight:700;
-  line-height:1.45; color:#fff;
-}
-.options { display:flex; flex-direction:column; gap:9px; margin-bottom:12px; }
-.option-btn {
-  background:rgba(255,255,255,0.04);
-  border:1.5px solid rgba(255,255,255,0.1);
-  border-radius:13px; padding:13px 14px;
-  color:#fff; font-family:'DM Sans',sans-serif; font-size:15px;
-  text-align:left; cursor:pointer; width:100%;
-  display:flex; align-items:center; gap:12px;
-  transition:all 0.15s;
-}
-.option-btn:hover:not(:disabled) {
-  border-color:var(--purple-mid);
-  background:rgba(123,77,176,0.12);
-}
-.option-btn.selected { border-color:var(--purple-mid); background:rgba(123,77,176,0.2); }
-.option-btn.correct  { border-color:var(--green); background:rgba(27,138,90,0.2); }
-.option-btn.wrong    { border-color:var(--red); background:rgba(220,38,38,0.12); opacity:0.65; }
-.option-btn.dimmed   { opacity:0.35; }
-.option-btn:disabled { cursor:not-allowed; }
-.opt-label {
-  width:28px; height:28px; border-radius:50%;
-  background:rgba(255,255,255,0.08);
-  display:flex; align-items:center; justify-content:center;
-  font-family:'Syne',sans-serif; font-weight:700; font-size:12px;
-  flex-shrink:0;
-}
-.option-btn.selected .opt-label { background:var(--purple); }
-.option-btn.correct  .opt-label { background:var(--green); }
-.option-btn.wrong    .opt-label { background:var(--red); }
-.opt-text { line-height:1.4; }
-
-.q-nav {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:0 4px; margin-bottom:4px;
-}
-.nav-btn {
-  background:rgba(255,255,255,0.07); border:none; color:#fff;
-  border-radius:10px; padding:8px 18px; font-family:'Syne',sans-serif;
-  font-weight:700; font-size:13px; cursor:pointer;
-  transition:background 0.15s;
-}
-.nav-btn:hover { background:rgba(255,255,255,0.12); }
-.q-dots { display:flex; gap:6px; }
-.dot {
-  width:8px; height:8px; border-radius:50%;
-  background:rgba(255,255,255,0.2); cursor:pointer;
-  transition:all 0.2s;
-}
-.dot.active { background:var(--purple-mid); transform:scale(1.3); }
-.dot.done   { background:rgba(27,138,90,0.7); }
-
-.feedback-flash {
-  display:none;
-  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-  font-family:'Syne',sans-serif; font-weight:800; font-size:28px;
-  padding:16px 32px; border-radius:16px; z-index:100;
-  animation:popIn 0.25s ease both;
-  pointer-events:none;
-}
-.feedback-flash.correct { background:rgba(27,138,90,0.9); }
-.feedback-flash.wrong   { background:rgba(220,38,38,0.9); }
-@keyframes popIn {
-  from { transform:translate(-50%,-50%) scale(0.8); opacity:0; }
-  to   { transform:translate(-50%,-50%) scale(1);   opacity:1; }
+@media(min-width:900px){
+  .admin-content{grid-template-columns:340px 1fr;gap:28px;align-items:start}
 }
 
-.alldone-msg {
-  display:none;
-  background:rgba(27,138,90,0.15);
-  border:1px solid rgba(27,138,90,0.4);
-  border-radius:13px; padding:14px;
-  text-align:center; font-size:14px; color:#6EE7B7;
-  font-weight:500;
-}
+/* Left sidebar (code + timer + controls) */
+.admin-sidebar{display:flex;flex-direction:column;gap:16px}
 
-/* ── RESULTS ── */
-#screen-results { justify-content:flex-start; padding-top:32px; }
-.results-header { text-align:center; margin-bottom:24px; }
-.results-score-label { color:rgba(255,255,255,0.4); font-size:14px; }
-.results-score {
-  font-family:'Syne',sans-serif; font-size:56px; font-weight:800;
-  color:var(--purple-mid); line-height:1;
-}
-.lb-section { padding:20px; }
-.lb-section-title {
-  font-family:'Syne',sans-serif; font-size:11px; font-weight:700;
-  letter-spacing:0.12em; text-transform:uppercase;
-  color:rgba(255,255,255,0.35); margin-bottom:14px;
-}
-.lb-row {
-  display:flex; align-items:center; gap:12px;
-  padding:10px 0;
-  border-bottom:1px solid rgba(255,255,255,0.05);
-}
-.lb-row:last-child { border-bottom:none; }
-.lb-row.lb-me { background:rgba(123,77,176,0.1); border-radius:10px; padding:10px; margin:0 -10px; }
-.lb-rank { width:32px; text-align:center; font-size:18px; }
-.lb-name { flex:1; font-size:15px; font-weight:500; }
-.lb-score { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; color:var(--purple-mid); }
+.admin-panel{display:none;flex-direction:column;gap:16px;width:100%}
+.admin-panel.active-panel{display:flex}
 
-/* ── ADMIN ── */
-#screen-admin { justify-content:flex-start; padding-top:0; }
-.admin-sticky {
-  position:sticky; top:0; z-index:10;
-  background:#0D0820;
-  border-bottom:1px solid var(--border);
-  padding:14px 16px; width:100%;
-}
-.admin-title-row {
-  display:flex; justify-content:space-between; align-items:center;
-  max-width:600px; margin:0 auto;
-}
-.admin-body { width:100%; max-width:600px; padding:16px; display:flex; flex-direction:column; gap:14px; }
+.game-code-card{padding:24px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:18px}
+.game-code-big{font-family:'Syne',sans-serif;font-size:64px;font-weight:800;letter-spacing:.2em;color:var(--purple-mid);line-height:1}
 
-.game-code-card { padding:20px; text-align:center; }
-.game-code-big {
-  font-family:'Syne',sans-serif; font-size:52px; font-weight:800;
-  letter-spacing:0.2em; color:var(--purple-mid);
-}
+.admin-timer-card{padding:20px;background:var(--card);border:1px solid var(--border);border-radius:18px}
+.admin-timer-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 
-.status-badge {
-  font-size:11px; font-weight:700; letter-spacing:0.1em;
-  text-transform:uppercase; padding:4px 12px; border-radius:999px;
-}
-.status-badge.waiting  { background:rgba(217,119,6,0.25);  color:#FCD34D; }
-.status-badge.active   { background:rgba(27,138,90,0.25);  color:#6EE7B7; }
-.status-badge.finished { background:rgba(91,45,142,0.25);  color:#C4A8FF; }
+.admin-ctrl-btn{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;border:none;border-radius:13px;padding:14px 20px;cursor:pointer;width:100%;transition:opacity .15s,transform .1s}
+.admin-ctrl-btn:active{transform:scale(.97)}
+.btn-start{background:var(--purple);color:#fff}.btn-start:hover{background:var(--purple-mid)}
+.btn-end{background:var(--red);color:#fff}
+.btn-reset{background:rgba(255,255,255,0.08);color:#fff}
 
-.admin-timer { padding:16px 20px; }
-.admin-timer-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+/* Leaderboard panel (full width on desktop) */
+.lb-desktop{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.lb-desktop-header{padding:20px 24px 0}
+.lb-desktop .lb-row{padding:12px 24px;margin:0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.lb-desktop .lb-row:last-child{border-bottom:none}
+.lb-desktop .lb-name{font-size:16px}
+.lb-desktop .lb-score{font-size:20px}
 
-.admin-q-card {
-  background:rgba(255,255,255,0.03);
-  border:1px solid rgba(255,255,255,0.07);
-  border-radius:14px; padding:14px;
-  transition:all 0.2s;
+/* Reveal panel */
+.reveal-grid{display:flex;flex-direction:column;gap:10px}
+@media(min-width:700px){
+  .reveal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 }
-.admin-q-card.revealed {
-  background:rgba(27,138,90,0.08);
-  border-color:rgba(27,138,90,0.3);
-}
-.q-num-bubble {
-  width:26px; height:26px; border-radius:50%;
-  background:var(--purple); display:flex; align-items:center; justify-content:center;
-  font-family:'Syne',sans-serif; font-weight:800; font-size:11px;
-  flex-shrink:0; margin-top:2px;
-}
-.admin-q-text { font-size:13px; color:rgba(255,255,255,0.65); line-height:1.45; margin:8px 0; }
-.reveal-btn {
-  background:var(--purple); border:none; color:#fff;
-  border-radius:8px; padding:7px 16px;
-  font-family:'Syne',sans-serif; font-weight:700; font-size:12px;
-  cursor:pointer; transition:background 0.15s;
-}
-.reveal-btn:hover { background:var(--purple-mid); }
-.answer-reveal {
-  font-size:13px; font-weight:700; color:#6EE7B7;
-  background:rgba(27,138,90,0.15);
-  border-radius:8px; padding:7px 12px; display:inline-block;
-}
+.admin-q-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:14px;transition:all .2s}
+.admin-q-card.revealed{background:rgba(27,138,90,0.08);border-color:rgba(27,138,90,0.3)}
+.q-num-bubble{width:26px;height:26px;border-radius:50%;background:var(--purple);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:11px;flex-shrink:0;margin-top:2px}
+.admin-q-text{font-size:13px;color:rgba(255,255,255,0.65);line-height:1.45;margin:8px 0}
+.reveal-btn{background:var(--purple);border:none;color:#fff;border-radius:8px;padding:7px 16px;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:background .15s}
+.reveal-btn:hover{background:var(--purple-mid)}
+.answer-reveal{font-size:13px;font-weight:700;color:#6EE7B7;background:rgba(27,138,90,0.15);border-radius:8px;padding:7px 12px;display:inline-block}
 
-.divider { height:1px; background:var(--border); width:100%; }
+.status-badge{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 12px;border-radius:999px}
+.status-badge.waiting{background:rgba(217,119,6,0.25);color:#FCD34D}
+.status-badge.active{background:rgba(27,138,90,0.25);color:#6EE7B7}
+.status-badge.finished{background:rgba(91,45,142,0.25);color:#C4A8FF}
+
+.section-label{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:4px}
+.divider{height:1px;background:var(--border);width:100%}
 </style>
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════════
-  JOIN SCREEN
-══════════════════════════════════════════════════════════ -->
+<!-- ══ JOIN ══ -->
 <div id="screen-join" class="screen">
   <div class="join-logo">
-    <div class="eyebrow">Upstox · War Room</div>
+    <div class="eyebrow">Upstox · UpConnects</div>
     <h1>The Quiz</h1>
     <p>8 Questions &nbsp;·&nbsp; 90 Seconds &nbsp;·&nbsp; One Winner</p>
   </div>
   <div class="card join-card">
-    <input id="input-name" class="field" type="text"     placeholder="Your name"   maxlength="20" autocomplete="off">
-    <input id="input-code" class="field" type="text"     placeholder="Game code"   maxlength="10" inputmode="numeric" autocomplete="off">
+    <input id="input-name" class="field" type="text"  placeholder="Your name"  maxlength="20" autocomplete="off">
+    <input id="input-code" class="field" type="text"  placeholder="Game code"  maxlength="10" inputmode="numeric" autocomplete="off">
     <p id="join-error" class="error-text"></p>
-    <button class="btn btn-purple" onclick="handleJoin()">Enter the War Room →</button>
+    <button class="btn btn-purple" onclick="handleJoin()">Enter UpConnects →</button>
   </div>
   <p style="color:rgba(255,255,255,0.2);font-size:12px;margin-top:16px">Get the game code from your host</p>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-  LOBBY SCREEN
-══════════════════════════════════════════════════════════ -->
+<!-- ══ LOBBY ══ -->
 <div id="screen-lobby" class="screen">
   <div class="lobby-avatar">⚔️</div>
   <h2 class="syne" style="font-size:28px;font-weight:800;margin-bottom:6px">You're in!</h2>
   <p style="color:rgba(255,255,255,0.4);font-size:15px;margin-bottom:24px">Waiting for the host to start...</p>
-
   <div class="card lobby-card" style="margin-bottom:12px">
     <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:4px">Playing as</div>
     <div class="syne" id="lobby-name" style="font-size:22px;font-weight:700"></div>
@@ -860,21 +589,15 @@ input.field::placeholder { color:rgba(255,255,255,0.28); }
     <div class="lobby-big" id="lobby-count">0</div>
     <div class="lobby-sub">players joined</div>
   </div>
-
   <div class="card" style="padding:16px;max-width:440px">
     <div id="lobby-players" class="player-chips"></div>
   </div>
-
   <div class="pulse-dots">
-    <div class="pulse-dot"></div>
-    <div class="pulse-dot"></div>
-    <div class="pulse-dot"></div>
+    <div class="pulse-dot"></div><div class="pulse-dot"></div><div class="pulse-dot"></div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-  QUIZ SCREEN
-══════════════════════════════════════════════════════════ -->
+<!-- ══ QUIZ ══ -->
 <div id="screen-quiz" class="screen">
   <div class="quiz-header">
     <div class="quiz-header-row">
@@ -884,107 +607,112 @@ input.field::placeholder { color:rgba(255,255,255,0.28); }
     </div>
     <div class="timer-bar"><div id="timer-fill" class="timer-fill" style="width:100%"></div></div>
   </div>
-
   <div class="quiz-body">
     <div class="card q-card">
       <span id="q-topic" class="topic-badge"></span>
-      <p   id="q-text"  class="q-text"></p>
+      <p    id="q-text"  class="q-text"></p>
     </div>
-
     <div id="q-options" class="options"></div>
-
     <div class="q-nav">
       <button id="q-prev" class="nav-btn" onclick="prevQuestion()">← Prev</button>
       <div id="q-dots" class="q-dots"></div>
       <button id="q-next" class="nav-btn" onclick="nextQuestion()">Next →</button>
     </div>
-
-    <div id="q-alldone" class="alldone-msg">
-      ✅ All answered! Sit tight until time's up.
-    </div>
+    <div id="q-alldone" class="alldone-msg">✅ All answered! Sit tight until time's up.</div>
   </div>
-
   <div id="q-feedback" class="feedback-flash"></div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-  RESULTS SCREEN
-══════════════════════════════════════════════════════════ -->
-<div id="screen-results" class="screen">
+<!-- ══ RESULTS (player) ══ -->
+<div id="screen-results" class="screen" style="justify-content:flex-start;padding-top:32px">
   <div class="results-header">
     <div style="font-size:48px;margin-bottom:8px">🏆</div>
-    <h1 class="syne" style="font-size:32px;font-weight:800;margin-bottom:4px">Quiz Over!</h1>
+    <h1 class="syne" style="font-size:32px;font-weight:800;margin-bottom:8px">Quiz Over!</h1>
     <div class="results-score-label">Your score</div>
     <div class="results-score" id="result-score">0</div>
+    <div style="color:rgba(255,255,255,0.3);font-size:13px;margin-top:4px">out of <span id="result-total"></span></div>
   </div>
   <div class="card" style="max-width:440px;width:100%">
     <div class="lb-section">
-      <div class="lb-section-title">Leaderboard</div>
+      <div class="lb-section-title">Final Leaderboard</div>
       <div id="results-board"></div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-  ADMIN SCREEN
-══════════════════════════════════════════════════════════ -->
+<!-- ══ ADMIN ══ -->
 <div id="screen-admin" class="screen" style="padding:0;align-items:stretch">
-  <div class="admin-sticky">
-    <div class="admin-title-row">
-      <span class="syne" style="font-size:16px;font-weight:800">War Room Admin</span>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span id="admin-status-badge" class="status-badge waiting">waiting</span>
-        <span id="admin-pcount" style="font-size:13px;color:rgba(255,255,255,0.35)">0 players joined</span>
-      </div>
+
+  <!-- Top bar -->
+  <div class="admin-topbar">
+    <div class="admin-topbar-left">
+      <span class="admin-brand">UpConnects Admin</span>
+      <span id="admin-status-badge" class="status-badge waiting">waiting</span>
+      <span id="admin-pcount" class="admin-meta">0 players joined</span>
+    </div>
+    <div class="admin-tabs">
+      <button id="tab-control"     class="tab-btn active" onclick="switchAdminTab('control')">Control</button>
+      <button id="tab-leaderboard" class="tab-btn"        onclick="switchAdminTab('leaderboard')">Leaderboard</button>
+      <button id="tab-reveal"      class="tab-btn"        onclick="switchAdminTab('reveal')">Reveal Answers</button>
     </div>
   </div>
 
-  <div class="admin-body">
+  <!-- Content area -->
+  <div class="admin-content">
 
-    <!-- Game code -->
-    <div class="card game-code-card">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:6px">Share this game code</div>
-      <div class="game-code-big">1947</div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.25);margin-top:4px">Players enter this at the join screen</div>
-    </div>
+    <!-- ── CONTROL TAB ── -->
+    <div id="panel-control" class="admin-panel active-panel" style="grid-column:1/-1">
+      <div style="display:grid;grid-template-columns:1fr;gap:16px;width:100%">
 
-    <!-- Timer -->
-    <div id="admin-timer-section" class="card admin-timer" style="display:none">
-      <div class="admin-timer-row">
-        <span class="syne" style="font-weight:700">Time Remaining</span>
-        <span id="timer-text" class="syne" style="font-size:24px;font-weight:800"></span>
+        <!-- top row: code + timer side by side on desktop -->
+        <div style="display:grid;grid-template-columns:1fr;gap:16px" id="admin-top-row">
+          <div class="game-code-card" style="max-width:none">
+            <div class="section-label">Share this game code</div>
+            <div class="game-code-big">1947</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.25);margin-top:6px">Players enter this at the join screen</div>
+          </div>
+          <div id="admin-timer-section" class="admin-timer-card" style="display:none">
+            <div class="admin-timer-row">
+              <span class="syne" style="font-weight:700;font-size:16px">Time Remaining</span>
+              <span id="admin-timer-text" class="syne" style="font-size:28px;font-weight:800"></span>
+            </div>
+            <div class="timer-bar"><div id="admin-timer-fill" class="timer-fill" style="width:100%"></div></div>
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <button id="admin-start-btn" class="admin-ctrl-btn btn-start" onclick="startGame()">Start Quiz</button>
+        <button id="admin-end-btn"   class="admin-ctrl-btn btn-end"   onclick="endGame()"   style="display:none">End Quiz Now</button>
+        <button id="admin-reset-btn" class="admin-ctrl-btn btn-reset" onclick="resetGame()" style="display:none">Reset for New Game</button>
+        <p id="admin-error" class="error-text"></p>
       </div>
-      <div class="timer-bar"><div id="timer-fill" class="timer-fill" style="width:100%"></div></div>
     </div>
 
-    <!-- Controls -->
-    <button id="admin-start-btn" class="btn btn-purple" onclick="startGame()" style="max-width:600px">
-      Start Quiz
-    </button>
-    <button id="admin-end-btn"   class="btn btn-red"    onclick="endGame()"   style="display:none;max-width:600px">
-      End Quiz Now
-    </button>
-    <button id="admin-reset-btn" class="btn btn-ghost"  onclick="resetGame()" style="display:none;max-width:600px">
-      Reset for New Game
-    </button>
-    <p id="admin-error" class="error-text"></p>
-
-    <!-- Live Leaderboard -->
-    <div class="card">
-      <div class="lb-section">
-        <div class="lb-section-title">Live Leaderboard</div>
+    <!-- ── LEADERBOARD TAB ── -->
+    <div id="panel-leaderboard" class="admin-panel" style="grid-column:1/-1">
+      <div class="lb-desktop" style="width:100%;max-width:600px;margin:0 auto">
+        <div class="lb-desktop-header">
+          <div class="section-label" style="padding-bottom:16px">Live Leaderboard</div>
+        </div>
         <div id="admin-lb"></div>
       </div>
     </div>
 
-    <!-- Reveal Answers -->
-    <div class="syne" style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.35);padding:0 2px">
-      Reveal Answers
+    <!-- ── REVEAL TAB ── -->
+    <div id="panel-reveal" class="admin-panel" style="grid-column:1/-1">
+      <div class="reveal-grid" id="admin-reveal-list" style="width:100%"></div>
     </div>
-    <div id="admin-questions" style="display:flex;flex-direction:column;gap:10px;max-width:600px;width:100%"></div>
 
   </div>
 </div>
+
+<style>
+@media(min-width:700px){
+  #admin-top-row{grid-template-columns:1fr 1fr !important}
+  #panel-control > div{max-width:700px;margin:0 auto}
+  .admin-ctrl-btn{max-width:700px}
+}
+</style>
 
 </body>
 </html>
